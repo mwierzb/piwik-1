@@ -714,6 +714,8 @@ class Manager extends Singleton
             $cacheKey .= '-' . md5(implode('', $this->getLoadedPluginsName()));
         }
 
+        $cache = \Piwik\Cache\Factory::buildDefaultCache($cacheKey, array('directory' => 'tracker'));
+
         $translations = $cache->get($cacheKey);
 
         if (!empty($translations) &&

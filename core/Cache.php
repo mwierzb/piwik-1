@@ -9,22 +9,30 @@
 namespace Piwik;
 
 use Piwik\Cache\Backend;
+use Stash\Interfaces\DriverInterface;
+use Stash\Pool;
 
 class Cache
 {
-    private $backend;
+    /**
+     * @var Pool
+     */
+    private $pool;
+    private $id;
+    private $item;
 
-    public function __construct(Backend $backend)
+    public function __construct($id)
     {
-        $this->backend = $backend;
+        $this->pool = new Pool();
+        $this->pool->setNamespace('piwikcache');
+        $this->id   = $this->getIdIfValid($id);
+        $this->item = $this->pool->getItem();
     }
 
-    /**
-     * The namespace to prefix all cache ids with.
-     *
-     * @var string
-     */
-    private $namespace = '';
+    public function setDriver(DriverInterface $driver)
+    {
+        $this->pool->setDriver($driver);
+    }
 
     /**
      * Sets the namespace to prefix all cache ids with.
@@ -35,40 +43,18 @@ class Cache
      */
     public function setNamespace($namespace)
     {
-        $this->namespace = (string) $namespace;
+        $this->pool->setNamespace('piwikcache' . $namespace);
+        $this->item->setKey($this->id, 'piwikcache' . $namespace);
     }
 
-    /**
-     * Retrieves the namespace that prefixes all cache ids.
-     *
-     * @return string
-     */
-    public function getNamespace()
-    {
-        return $this->namespace;
-    }
-
-    /**
-     * Prefixes the passed id with the configured namespace value.
-     *
-     * @param string $id The id to namespace.
-     *
-     * @return string The namespaced id.
-     */
-    private function getNamespacedId($id)
-    {
-        return sprintf('piwikcache-%s-%s]', $this->getNamespace(), $id);
-    }
-
-    protected function getNamespacedIdIfValid($id)
+    protected function getIdIfValid($id)
     {
         if (!Filesystem::isValidFilename($id)) {
             throw new \Exception("Invalid cache ID request $id");
         }
 
-        return $this->getNamespacedId($id);
+        return $id;
     }
-
 
     /**
      * Fetches an entry from the cache.
@@ -77,15 +63,9 @@ class Cache
      *
      * @return mixed The cached data or FALSE, if no cache entry exists for the given id.
      */
-    public function fetch($id)
+    public function get()
     {
-        if (empty($id)) {
-            return false;
-        }
-
-        $id = $this->getNamespacedIdIfValid($id);
-
-        return $this->backend->doFetch($id);
+        return $this->item->get();
     }
 
     /**
@@ -95,36 +75,23 @@ class Cache
      *
      * @return boolean TRUE if a cache entry exists for the given cache id, FALSE otherwise.
      */
-    public function contains($id)
+    public function has()
     {
-        if (empty($id)) {
-            return false;
-        }
-
-        $id = $this->getNamespacedIdIfValid($id);
-
-        return $this->backend->doContains($id);
+        return !$this->item->isMiss();
     }
 
     /**
      * Puts data into the cache.
      *
-     * @param string $id       The cache id.
      * @param mixed  $data     The cache entry/data.
      * @param int    $lifeTime The cache lifetime.
      *                         If != 0, sets a specific lifetime for this cache entry (0 => infinite lifeTime).
      *
      * @return boolean TRUE if the entry was successfully stored in the cache, FALSE otherwise.
      */
-    public function save($id, $data, $lifeTime = 0)
+    public function set($data, $lifeTime = 0)
     {
-        if (empty($id)) {
-            return false;
-        }
-
-        $id = $this->getNamespacedIdIfValid($id);
-
-        return $this->backend->doSave($id, $data, $lifeTime);
+        return $this->item->set($data, $lifeTime);
     }
 
     /**
@@ -134,15 +101,9 @@ class Cache
      *
      * @return boolean TRUE if the cache entry was successfully deleted, FALSE otherwise.
      */
-    public function delete($id)
+    public function delete()
     {
-        if (empty($id)) {
-            return false;
-        }
-
-        $id = $this->getNamespacedIdIfValid($id);
-
-        return $this->backend->doDelete($id);
+        return $this->item->clear();
     }
 
     /**
@@ -152,6 +113,6 @@ class Cache
      */
     public function flushAll()
     {
-        return $this->backend->doFlush();
+        return $this->pool->flush();
     }
 }

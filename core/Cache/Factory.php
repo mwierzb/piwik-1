@@ -9,11 +9,8 @@
 namespace Piwik\Cache;
 
 use Piwik\Cache;
-use Piwik\Cache\Backend\File;
-use Piwik\Cache\Backend\ArrayCache;
 use Piwik\Config;
-use Piwik\Container\StaticContainer;
-use Piwik\Piwik;
+use Stash\DriverList;
 
 class Factory
 {
@@ -22,12 +19,12 @@ class Factory
      */
     private static $backends = array();
 
-    public static function buildDefaultCache($options = array())
+    public static function buildDefaultCache($id, $options = array())
     {
         $config  = Config::getInstance()->cache;
         $options = array_merge($config, $options);
 
-        return self::buildCache($config['backend'], $options);
+        return self::buildCache($id, $config['backend'], $options);
     }
 
     public static function flushAll()
@@ -42,10 +39,11 @@ class Factory
      * @param  array $options
      * @return Cache
      */
-    public static function buildCache($backend, $options = array())
+    public static function buildCache($id, $backend, $options = array())
     {
         $backend = self::buildCachedBackend($backend, $options);
-        $cache   = new Cache($backend);
+        $cache   = new Cache($id);
+        $cache->setDriver($backend);
 
         return $cache;
     }
@@ -73,55 +71,28 @@ class Factory
      */
     private static function buildBackend($backend, $options = array())
     {
-        switch ($backend) {
-            case 'array':
-                return new ArrayCache();
-
-            case 'file':
-                return self::getFileCache($options);
-
-            case 'chained':
-                return self::getChainedCache($options);
-
-            case 'persistent':
-                return new Cache\Backend\FileStatic();
-
-            default:
-                $type    = $backend;
-                $backend = null;
-
-                Piwik::postEvent('Cache.newBackend', array($type, $options, &$backend));
-
-                if (is_object($backend) && $backend instanceof Backend) {
-                    return $backend;
-                }
-
-                throw new \InvalidArgumentException("Cache backend $backend not valid");
-        }
-    }
-
-    private static function getFileCache($options)
-    {
-        $tmp  = StaticContainer::getContainer()->get('path.tmp');
-        $path = $tmp . '/cache/';
-
-        if (!empty($options['directory'])) {
-            $path .= $options['directory'] . '/';
+        if ('composite' === $backend) {
+            return self::getChainedCache($options);
         }
 
-        return new File($path);
+        $backend = DriverList::getDriverClass($backend);
+        $backend = new $backend;
+        $backend->setOptions($options);
+
+        return $backend;
     }
 
     private static function getChainedCache($options)
     {
-        $cache = new Cache\Backend\Chained();
-
+        $drivers = array();
         foreach ($options['backends'] as $backendToBuild) {
-            $backend = self::buildCachedBackend($backendToBuild, $options);
-            $cache->addBackend($backend);
+            $drivers[] = self::buildCachedBackend($backendToBuild, $options);
         }
 
-        return $cache;
+        $driver = DriverList::getDriverClass('composite');
+        $driver = new $driver($drivers);
+
+        return $driver;
     }
 
 }
